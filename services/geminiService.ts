@@ -1,9 +1,8 @@
 import { GoogleGenAI, Type, Schema } from "@google/genai";
 import { GeneratedAd, PromptTemplate, KeywordMetric, UploadedDocument, AuditIssue, Experiment, DocCategory, CsvSchemaMetadata } from "../types";
 
-// Safe access to process.env
-const apiKey = (typeof process !== 'undefined' && process.env && process.env.API_KEY) || '';
-const ai = new GoogleGenAI({ apiKey });
+const apiKey = process.env.API_KEY;
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 // --- Utilities for Knowledge Base ---
 
@@ -42,6 +41,11 @@ export const generateSimulatedVector = (category: DocCategory) => {
 // --- CSV Schema Analysis ---
 
 export const analyzeCsvSchema = async (fileName: string, headers: string[], sampleRows: any[]): Promise<CsvSchemaMetadata[]> => {
+    if (!apiKey) {
+        console.warn("No API Key configured. Skipping schema analysis.");
+        return headers.map(h => ({ columnName: h, entityType: 'Unknown', description: 'API Key missing' }));
+    }
+
     const prompt = `
     You are a Data Architect. Analyze this CSV file structure for an IT Training Marketing context.
     File Name: ${fileName}
@@ -50,7 +54,7 @@ export const analyzeCsvSchema = async (fileName: string, headers: string[], samp
 
     Task:
     1. Identify what each column represents (e.g., "Course Name", "Cost", "Clicks").
-    2. Map it to a standard marketing entity if possible (Metric, Dimension, ID).
+    2. Map it to a standard marketing entity if possible (Metric, Dimension, Identifier).
     3. Provide a brief description of the relationship.
 
     Return a JSON list of metadata.
@@ -93,7 +97,7 @@ export const generateAdCopy = async (
   template: PromptTemplate
 ): Promise<GeneratedAd> => {
   
-  if (!apiKey) throw new Error("API Key is missing. Ensure process.env.API_KEY is set.");
+  if (!apiKey) throw new Error("API Key is missing. Please configure it in Settings or .env file.");
 
   const modelId = "gemini-2.5-flash"; 
   
@@ -185,6 +189,18 @@ export const generateAdCopy = async (
 // --- Keyword Analysis ---
 
 export const analyzeKeywordsExtended = async (seedKeywords: string[]): Promise<KeywordMetric[]> => {
+    if (!apiKey) {
+        // Fallback mock data if API key is missing
+        return seedKeywords.map(k => ({
+            keyword: k + " (Demo)",
+            volume: 1000,
+            cpc: 2.50,
+            competition: 'Medium',
+            trend: 10,
+            source: 'Google Ads'
+        }));
+    }
+
     const prompt = `
     Act as a Keyword Research API aggregator (Google Ads, Semrush, Moz).
     For the following seed keywords: ${seedKeywords.join(', ')}.
@@ -234,6 +250,7 @@ export const analyzeKeywordsExtended = async (seedKeywords: string[]): Promise<K
 // --- Knowledge Correlation ---
 
 export const correlateDocuments = async (docs: UploadedDocument[]): Promise<string> => {
+    if (!apiKey) return "API Key missing. Cannot perform AI correlation.";
     if (docs.length < 2) return "Not enough documents to correlate. Please upload at least 2 files.";
 
     const docList = docs.map(d => {
@@ -276,6 +293,19 @@ export const correlateDocuments = async (docs: UploadedDocument[]): Promise<stri
 // --- Smart Audit ---
 
 export const performAccountAudit = async (accountData: any = {}): Promise<AuditIssue[]> => {
+    if (!apiKey) {
+        // Return simulated issues if no API key
+        return [{
+            id: 'demo-1',
+            severity: 'WARNING',
+            category: 'KEYWORDS',
+            title: 'Broad Match Expansion (Demo)',
+            description: 'This is a demo issue because no API Key was found.',
+            impact: '$500 potential waste',
+            aiRecommendation: 'Add an API Key in settings to get real insights.'
+        }];
+    }
+
     const prompt = `
     You are an AI Auditor for a large Google Ads account (IT Training sector).
     Analyze the following raw account data fetched from the API:
@@ -324,6 +354,8 @@ export const performAccountAudit = async (accountData: any = {}): Promise<AuditI
 }
 
 export const analyzeExperimentResults = async (experiment: Experiment): Promise<string> => {
+    if (!apiKey) return "Analysis unavailable: Missing API Key.";
+
     const prompt = `
     Analyze this A/B Test for Google Ads:
     Experiment Name: ${experiment.name}
