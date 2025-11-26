@@ -1,11 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import { Save, Upload, Key, CheckCircle, Database } from 'lucide-react';
+import React, { useState } from 'react';
+import { Save, Upload, Key, CheckCircle, Database, Server, RefreshCw } from 'lucide-react';
 import { configService } from '../services/configService';
 import { ApiConfig } from '../types';
+import { NeonService } from '../services/neonService';
 
 const Settings: React.FC = () => {
   const [config, setConfig] = useState<ApiConfig>(configService.getConfig() || {});
   const [status, setStatus] = useState<'IDLE' | 'SAVED' | 'ERROR'>('IDLE');
+  const [testingNeon, setTestingNeon] = useState(false);
+  const [neonStatus, setNeonStatus] = useState<'NONE' | 'SUCCESS' | 'FAILED'>('NONE');
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -28,6 +31,20 @@ const Settings: React.FC = () => {
     configService.saveConfig(config);
     setStatus('SAVED');
     setTimeout(() => setStatus('IDLE'), 3000);
+    
+    // Trigger reload of DB service
+    if (config.neon?.connectionString) {
+        window.location.reload(); 
+    }
+  };
+
+  const testNeonConnection = async () => {
+      if (!config.neon?.connectionString) return;
+      setTestingNeon(true);
+      const service = new NeonService(config.neon.connectionString);
+      const result = await service.init();
+      setNeonStatus(result ? 'SUCCESS' : 'FAILED');
+      setTestingNeon(false);
   };
 
   return (
@@ -70,6 +87,29 @@ const Settings: React.FC = () => {
             </h3>
             
             <div className="space-y-4">
+                 <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Neon DB Connection String</label>
+                    <div className="flex gap-2">
+                        <input 
+                            type="password"
+                            className="w-full text-sm border border-slate-300 rounded px-3 py-2 outline-none focus:border-blue-500"
+                            value={config.neon?.connectionString || ''}
+                            onChange={(e) => setConfig({ ...config, neon: { ...config.neon!, connectionString: e.target.value } })}
+                            placeholder="postgres://user:pass@ep-xyz.aws.neon.tech/neondb?sslmode=require"
+                        />
+                        <button 
+                            onClick={testNeonConnection}
+                            disabled={!config.neon?.connectionString || testingNeon}
+                            className="bg-purple-100 text-purple-700 px-3 rounded-lg hover:bg-purple-200"
+                            title="Test Connection"
+                        >
+                            {testingNeon ? <RefreshCw className="animate-spin" size={18} /> : <Server size={18} />}
+                        </button>
+                    </div>
+                    {neonStatus === 'SUCCESS' && <p className="text-xs text-emerald-600 mt-1">✓ Connected successfully. Schema initialized.</p>}
+                    {neonStatus === 'FAILED' && <p className="text-xs text-red-500 mt-1">✗ Connection failed. Check credentials.</p>}
+                </div>
+
                 <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Google Ads Customer ID</label>
                     <input 
@@ -79,16 +119,7 @@ const Settings: React.FC = () => {
                         placeholder="123-456-7890"
                     />
                 </div>
-                 <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Neon DB Connection String</label>
-                    <input 
-                        type="password"
-                        className="w-full text-sm border border-slate-300 rounded px-3 py-2 outline-none focus:border-blue-500"
-                        value={config.neon?.connectionString || ''}
-                        onChange={(e) => setConfig({ ...config, neon: { ...config.neon!, connectionString: e.target.value } })}
-                        placeholder="postgres://..."
-                    />
-                </div>
+                
                 <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Semrush API Key</label>
                     <input 
@@ -107,7 +138,7 @@ const Settings: React.FC = () => {
                     className="flex items-center gap-2 px-6 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800"
                 >
                     <Save size={18} />
-                    {status === 'SAVED' ? 'Saved!' : 'Save Configuration'}
+                    {status === 'SAVED' ? 'Saved & Reloading...' : 'Save Configuration'}
                 </button>
             </div>
         </div>
