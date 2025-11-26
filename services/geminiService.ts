@@ -1,8 +1,20 @@
 import { GoogleGenAI, Type, Schema } from "@google/genai";
 import { GeneratedAd, PromptTemplate, KeywordMetric, UploadedDocument, AuditIssue, Experiment, DocCategory, CsvSchemaMetadata } from "../types";
 
+// Fix for TS2580: Cannot find name 'process'
+declare var process: {
+  env: {
+    API_KEY?: string;
+    [key: string]: any;
+  }
+};
+
 const apiKey = process.env.API_KEY;
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
+// Initialize AI client. Note: This will throw at runtime if API_KEY is missing, 
+// which is handled by the ErrorBoundary in index.tsx or by the checks below.
+// We pass the apiKey directly as required.
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
 
 // --- Utilities for Knowledge Base ---
 
