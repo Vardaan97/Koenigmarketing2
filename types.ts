@@ -5,10 +5,18 @@ export enum AppView {
   PROMPT_STUDIO = 'PROMPT_STUDIO',
   KEYWORD_LAB = 'KEYWORD_LAB',
   AUDIT_CENTER = 'AUDIT_CENTER',
-  EXPERIMENTS = 'EXPERIMENTS'
+  EXPERIMENTS = 'EXPERIMENTS',
+  SETTINGS = 'SETTINGS'
 }
 
 export type DocCategory = 'COURSE_CONTENT' | 'PAST_PERFORMANCE' | 'STRATEGY_BRIEF' | 'COMPETITOR_INFO' | 'UNCATEGORIZED';
+
+export interface CsvSchemaMetadata {
+  columnName: string;
+  entityType: string; // e.g., 'Metric', 'Dimension', 'Identifier'
+  description: string;
+  mappedTo?: string; // e.g., 'CPC', 'Campaign Name'
+}
 
 export interface UploadedDocument {
   id: string;
@@ -24,6 +32,9 @@ export interface UploadedDocument {
   hash?: string;
   vectorX?: number;
   vectorY?: number;
+  // New: Schema Intelligence for CSVs
+  schemaMetadata?: CsvSchemaMetadata[];
+  rowSample?: any[];
 }
 
 export interface AdGroupRow {
@@ -68,6 +79,24 @@ export interface KeywordMetric {
   source: 'Google Ads' | 'Semrush' | 'Perplexity';
 }
 
+// --- CONFIGURATION TYPES ---
+
+export interface ApiConfig {
+  googleAds?: {
+    customerId: string;
+    developerToken?: string;
+    clientId?: string;
+    clientSecret?: string;
+    refreshToken?: string;
+  };
+  semrush?: {
+    apiKey: string;
+  };
+  neon?: {
+    connectionString: string;
+  };
+}
+
 // --- GOOGLE ADS TYPES ---
 
 export interface GoogleAdsCampaign {
@@ -106,7 +135,7 @@ export interface AuditIssue {
 }
 
 export interface ExperimentVariant {
-  name: string; // e.g. "Control - Price Focus" vs "Variant - Quality Focus"
+  name: string; 
   impressions: number;
   clicks: number;
   conversions: number;
@@ -121,7 +150,7 @@ export interface Experiment {
   name: string;
   startDate: string;
   status: 'RUNNING' | 'COMPLETED' | 'DRAFT';
-  variants: [ExperimentVariant, ExperimentVariant]; // Limit to 2 for A/B simple view
-  aiAnalysis?: string; // Gemini's conclusion
+  variants: [ExperimentVariant, ExperimentVariant]; 
+  aiAnalysis?: string; 
   winner?: 'A' | 'B' | 'INCONCLUSIVE';
 }

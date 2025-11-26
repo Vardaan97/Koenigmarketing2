@@ -5,7 +5,7 @@ import {
   Wand2, 
   TerminalSquare, 
   Search, 
-  Settings,
+  Settings as SettingsIcon,
   Menu,
   X,
   Stethoscope,
@@ -81,10 +81,13 @@ const Layout: React.FC<LayoutProps> = ({ children, currentView, onViewChange }) 
         </nav>
 
         <div className="absolute bottom-0 w-full p-4 border-t border-slate-800">
-          <div className="flex items-center gap-3 px-4 py-3 text-slate-400 hover:text-white cursor-pointer rounded-lg hover:bg-slate-800">
-            <Settings size={20} />
+          <button 
+            onClick={() => onViewChange(AppView.SETTINGS)}
+            className={`flex w-full items-center gap-3 px-4 py-3 cursor-pointer rounded-lg hover:bg-slate-800 ${currentView === AppView.SETTINGS ? 'text-white bg-slate-800' : 'text-slate-400'}`}
+          >
+            <SettingsIcon size={20} />
             <span className="font-medium">Settings</span>
-          </div>
+          </button>
         </div>
       </aside>
 

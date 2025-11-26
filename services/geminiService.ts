@@ -1,12 +1,12 @@
 import { GoogleGenAI, Type, Schema } from "@google/genai";
-import { GeneratedAd, PromptTemplate, KeywordMetric, UploadedDocument, AuditIssue, Experiment, DocCategory } from "../types";
+import { GeneratedAd, PromptTemplate, KeywordMetric, UploadedDocument, AuditIssue, Experiment, DocCategory, CsvSchemaMetadata } from "../types";
 
-const apiKey = process.env.API_KEY || '';
+// Safe access to process.env
+const apiKey = (typeof process !== 'undefined' && process.env && process.env.API_KEY) || '';
 const ai = new GoogleGenAI({ apiKey });
 
 // --- Utilities for Knowledge Base ---
 
-// Simulates generating a content hash for deduplication
 export const generateContentHash = (content: string, name: string): string => {
     let hash = 0;
     const combined = content + name;
@@ -19,22 +19,18 @@ export const generateContentHash = (content: string, name: string): string => {
     return Math.abs(hash).toString(16);
 };
 
-// Simulates vector embedding placement for the visualization
-// Clusters similar categories together
 export const generateSimulatedVector = (category: DocCategory) => {
     let baseX = 50;
     let baseY = 50;
     
-    // Define cluster centers
     switch(category) {
-        case 'COURSE_CONTENT': baseX = 20; baseY = 20; break; // Top Left
-        case 'PAST_PERFORMANCE': baseX = 80; baseY = 20; break; // Top Right
-        case 'STRATEGY_BRIEF': baseX = 50; baseY = 80; break; // Bottom Center
-        case 'COMPETITOR_INFO': baseX = 80; baseY = 80; break; // Bottom Right
-        case 'UNCATEGORIZED': baseX = 20; baseY = 80; break; // Bottom Left
+        case 'COURSE_CONTENT': baseX = 20; baseY = 20; break;
+        case 'PAST_PERFORMANCE': baseX = 80; baseY = 20; break;
+        case 'STRATEGY_BRIEF': baseX = 50; baseY = 80; break;
+        case 'COMPETITOR_INFO': baseX = 80; baseY = 80; break;
+        case 'UNCATEGORIZED': baseX = 20; baseY = 80; break;
     }
 
-    // Add jitter/randomness
     const jitter = () => (Math.random() - 0.5) * 25;
     
     return {
@@ -42,6 +38,52 @@ export const generateSimulatedVector = (category: DocCategory) => {
         y: Math.max(5, Math.min(95, baseY + jitter()))
     };
 };
+
+// --- CSV Schema Analysis ---
+
+export const analyzeCsvSchema = async (fileName: string, headers: string[], sampleRows: any[]): Promise<CsvSchemaMetadata[]> => {
+    const prompt = `
+    You are a Data Architect. Analyze this CSV file structure for an IT Training Marketing context.
+    File Name: ${fileName}
+    Headers: ${headers.join(', ')}
+    Sample Data: ${JSON.stringify(sampleRows)}
+
+    Task:
+    1. Identify what each column represents (e.g., "Course Name", "Cost", "Clicks").
+    2. Map it to a standard marketing entity if possible (Metric, Dimension, ID).
+    3. Provide a brief description of the relationship.
+
+    Return a JSON list of metadata.
+    `;
+
+    const schema: Schema = {
+        type: Type.ARRAY,
+        items: {
+            type: Type.OBJECT,
+            properties: {
+                columnName: { type: Type.STRING },
+                entityType: { type: Type.STRING },
+                description: { type: Type.STRING },
+                mappedTo: { type: Type.STRING }
+            }
+        }
+    };
+
+    try {
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: schema
+            }
+        });
+        return JSON.parse(response.text || "[]");
+    } catch (e) {
+        console.error("Schema analysis failed", e);
+        return headers.map(h => ({ columnName: h, entityType: 'Unknown', description: 'Analysis failed' }));
+    }
+}
 
 // --- Ad Generation ---
 
@@ -51,7 +93,7 @@ export const generateAdCopy = async (
   template: PromptTemplate
 ): Promise<GeneratedAd> => {
   
-  if (!apiKey) throw new Error("API Key is missing.");
+  if (!apiKey) throw new Error("API Key is missing. Ensure process.env.API_KEY is set.");
 
   const modelId = "gemini-2.5-flash"; 
   
@@ -63,7 +105,13 @@ export const generateAdCopy = async (
 
   const formatDocSection = (title: string, docs: UploadedDocument[]) => {
     if (docs.length === 0) return "";
-    return `\n--- ${title} ---\n` + docs.map(d => `FILE: ${d.name}\nDESC: ${d.description}\nCONTENT_SNIPPET: ${d.content.substring(0, 800)}...`).join('\n');
+    return `\n--- ${title} ---\n` + docs.map(d => {
+        let extraContext = "";
+        if (d.schemaMetadata) {
+            extraContext = `\nSTRUCTURE: ${d.schemaMetadata.map(m => `${m.columnName} (${m.entityType})`).join(', ')}`;
+        }
+        return `FILE: ${d.name}${extraContext}\nDESC: ${d.description}\nCONTENT_SNIPPET: ${d.content.substring(0, 800)}...`;
+    }).join('\n');
   };
 
   const contextString = contextDocs.length > 0 
@@ -188,7 +236,13 @@ export const analyzeKeywordsExtended = async (seedKeywords: string[]): Promise<K
 export const correlateDocuments = async (docs: UploadedDocument[]): Promise<string> => {
     if (docs.length < 2) return "Not enough documents to correlate. Please upload at least 2 files.";
 
-    const docList = docs.map(d => `- [${d.category}] ${d.name}: ${d.description}`).join('\n');
+    const docList = docs.map(d => {
+        let meta = "";
+        if (d.schemaMetadata) {
+            meta = ` (Structured Data: ${d.schemaMetadata.map(m => m.columnName).join(', ')})`;
+        }
+        return `- [${d.category}] ${d.name}: ${d.description}${meta}`;
+    }).join('\n');
 
     const prompt = `
     Analyze the relationships between these uploaded knowledge base files for Koenig (IT Training Company):
@@ -197,14 +251,14 @@ export const correlateDocuments = async (docs: UploadedDocument[]): Promise<stri
     Task:
     1. Identify how the "Past Performance" reports correlates with "Course Content".
     2. Identify if "Competitor Info" contradicts or supports our "Strategy Briefs".
-    3. Provide actionable insights for the Ad Generation team.
+    3. Look for connections between CSV columns (Structured Data) and textual content.
+    4. Provide actionable insights for the Ad Generation team.
 
     Output Format:
     Provide a "Knowledge Graph" summary in plain text. Use bullet points. 
     `;
 
     try {
-        // Using Gemini 3 Pro for deeper reasoning as requested with MAX Thinking Budget
         const response = await ai.models.generateContent({
             model: "gemini-3-pro-preview",
             contents: prompt,
