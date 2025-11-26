@@ -1,8 +1,47 @@
 import { GoogleGenAI, Type, Schema } from "@google/genai";
-import { GeneratedAd, PromptTemplate, KeywordMetric, UploadedDocument, AuditIssue, Experiment } from "../types";
+import { GeneratedAd, PromptTemplate, KeywordMetric, UploadedDocument, AuditIssue, Experiment, DocCategory } from "../types";
 
 const apiKey = process.env.API_KEY || '';
 const ai = new GoogleGenAI({ apiKey });
+
+// --- Utilities for Knowledge Base ---
+
+// Simulates generating a content hash for deduplication
+export const generateContentHash = (content: string, name: string): string => {
+    let hash = 0;
+    const combined = content + name;
+    if (combined.length === 0) return hash.toString();
+    for (let i = 0; i < combined.length; i++) {
+        const char = combined.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash; // Convert to 32bit integer
+    }
+    return Math.abs(hash).toString(16);
+};
+
+// Simulates vector embedding placement for the visualization
+// Clusters similar categories together
+export const generateSimulatedVector = (category: DocCategory) => {
+    let baseX = 50;
+    let baseY = 50;
+    
+    // Define cluster centers
+    switch(category) {
+        case 'COURSE_CONTENT': baseX = 20; baseY = 20; break; // Top Left
+        case 'PAST_PERFORMANCE': baseX = 80; baseY = 20; break; // Top Right
+        case 'STRATEGY_BRIEF': baseX = 50; baseY = 80; break; // Bottom Center
+        case 'COMPETITOR_INFO': baseX = 80; baseY = 80; break; // Bottom Right
+        case 'UNCATEGORIZED': baseX = 20; baseY = 80; break; // Bottom Left
+    }
+
+    // Add jitter/randomness
+    const jitter = () => (Math.random() - 0.5) * 25;
+    
+    return {
+        x: Math.max(5, Math.min(95, baseX + jitter())),
+        y: Math.max(5, Math.min(95, baseY + jitter()))
+    };
+};
 
 // --- Ad Generation ---
 
@@ -16,7 +55,6 @@ export const generateAdCopy = async (
 
   const modelId = "gemini-2.5-flash"; 
   
-  // Smart Context Construction
   const courseDocs = contextDocs.filter(d => d.category === 'COURSE_CONTENT');
   const perfDocs = contextDocs.filter(d => d.category === 'PAST_PERFORMANCE');
   const strategyDocs = contextDocs.filter(d => d.category === 'STRATEGY_BRIEF');
@@ -99,7 +137,6 @@ export const generateAdCopy = async (
 // --- Keyword Analysis ---
 
 export const analyzeKeywordsExtended = async (seedKeywords: string[]): Promise<KeywordMetric[]> => {
-    // Simulated multi-source aggregation
     const prompt = `
     Act as a Keyword Research API aggregator (Google Ads, Semrush, Moz).
     For the following seed keywords: ${seedKeywords.join(', ')}.
@@ -167,33 +204,35 @@ export const correlateDocuments = async (docs: UploadedDocument[]): Promise<stri
     `;
 
     try {
+        // Using Gemini 3 Pro for deeper reasoning as requested with MAX Thinking Budget
         const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
+            model: "gemini-3-pro-preview",
             contents: prompt,
+            config: {
+                thinkingConfig: { thinkingBudget: 32768 }
+            }
         });
         return response.text || "Could not analyze relationships.";
     } catch (e) {
+        console.error("Correlation error", e);
         return "Error analyzing document relationships.";
     }
 }
 
 // --- Smart Audit ---
 
-export const performAccountAudit = async (): Promise<AuditIssue[]> => {
-    // In production, we would pass real JSON data fetched from Google Ads API.
-    // Here we simulate the raw data finding process.
+export const performAccountAudit = async (accountData: any = {}): Promise<AuditIssue[]> => {
     const prompt = `
     You are an AI Auditor for a large Google Ads account (IT Training sector).
-    Generate 4-5 realistic, high-impact audit findings based on typical issues in this industry.
+    Analyze the following raw account data fetched from the API:
+    ${JSON.stringify(accountData)}
+
+    Task:
+    Generate 4-5 realistic, high-impact audit findings based on these metrics.
+    If data is missing, infer typical issues for this industry.
     
     Categories: BUDGET, KEYWORDS, AD_COPY, SETTINGS.
     Severities: CRITICAL, WARNING, INFO.
-
-    Issues to simulate finding:
-    1. High CPA on broad match "free training" keywords.
-    2. Low Quality Score on "AWS Solutions Architect" due to landing page mismatch.
-    3. Budget capped on high-ROAS "CISSP" campaign.
-    4. PMax asset group missing video assets.
 
     Return JSON.
     `;
@@ -230,8 +269,6 @@ export const performAccountAudit = async (): Promise<AuditIssue[]> => {
     }
 }
 
-// --- Experiment Analysis ---
-
 export const analyzeExperimentResults = async (experiment: Experiment): Promise<string> => {
     const prompt = `
     Analyze this A/B Test for Google Ads:
@@ -239,22 +276,15 @@ export const analyzeExperimentResults = async (experiment: Experiment): Promise<
     
     Variant A (Control):
     - CTR: ${experiment.variants[0].ctr}%
-    - Conv. Rate: ${experiment.variants[0].conversions / experiment.variants[0].clicks * 100}%
-    - CPA: $${experiment.variants[0].cpa}
     - ROAS: ${experiment.variants[0].roas}
     
     Variant B (Test):
     - CTR: ${experiment.variants[1].ctr}%
-    - Conv. Rate: ${experiment.variants[1].conversions / experiment.variants[1].clicks * 100}%
-    - CPA: $${experiment.variants[1].cpa}
     - ROAS: ${experiment.variants[1].roas}
 
     Task:
-    1. Determine the winner based on ROAS and Efficiency.
-    2. Explain if the result is statistically significant (assume sample size is large enough).
-    3. Provide a recommendation (Keep A, Switch to B, or Continue Testing).
-    
-    Keep it brief (max 3 sentences).
+    1. Determine the winner.
+    2. Explain significance.
     `;
 
     try {

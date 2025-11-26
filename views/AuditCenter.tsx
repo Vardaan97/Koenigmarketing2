@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Stethoscope, AlertTriangle, AlertCircle, Info, CheckCircle2, RefreshCw, ArrowRight } from 'lucide-react';
 import { performAccountAudit } from '../services/geminiService';
+import { googleAdsService } from '../services/googleAdsService';
 import { AuditIssue } from '../types';
 
 const AuditCenter: React.FC = () => {
@@ -10,9 +11,13 @@ const AuditCenter: React.FC = () => {
 
     const runAudit = async () => {
         setScanning(true);
-        // Simulate API delay
-        await new Promise(resolve => setTimeout(resolve, 1500));
-        const results = await performAccountAudit();
+        // 1. Fetch RAW data from Google Ads API (Service)
+        // This ensures the AI isn't just hallucinating, but analyzing concrete numbers.
+        const healthMetrics = await googleAdsService.fetchAccountHealthMetrics();
+
+        // 2. Send these metrics to Gemini to generate the human-readable Audit Report
+        const results = await performAccountAudit(healthMetrics);
+        
         setIssues(results);
         setLastScan(new Date().toLocaleTimeString());
         setScanning(false);
@@ -41,7 +46,7 @@ const AuditCenter: React.FC = () => {
             <div className="flex-shrink-0 flex justify-between items-end">
                 <div>
                     <h1 className="text-2xl font-bold text-slate-900">Smart Audit Center</h1>
-                    <p className="text-slate-500 mt-1">Real-time API analysis of account health, wasted spend, and optimization opportunities.</p>
+                    <p className="text-slate-500 mt-1">Fetches live metrics from Google Ads API and uses AI to identify wasted spend.</p>
                 </div>
                 <button 
                     onClick={runAudit}
@@ -54,7 +59,7 @@ const AuditCenter: React.FC = () => {
                     `}
                 >
                     <RefreshCw size={20} className={scanning ? "animate-spin" : ""} />
-                    {scanning ? 'Running Deep Scan...' : 'Run Live Audit'}
+                    {scanning ? 'Fetching API Data...' : 'Run Live Audit'}
                 </button>
             </div>
 

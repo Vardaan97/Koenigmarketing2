@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Layout from './components/Layout';
 import Dashboard from './views/Dashboard';
 import KnowledgeBase from './views/KnowledgeBase';
@@ -43,8 +43,24 @@ Explain your reasoning.
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<AppView>(AppView.DASHBOARD);
-  const [documents, setDocuments] = useState<UploadedDocument[]>([]);
+  
+  // Initialize from localStorage to ensure data is always there (Persistent Layer)
+  const [documents, setDocuments] = useState<UploadedDocument[]>(() => {
+    try {
+      const saved = localStorage.getItem('adgenius_kb_docs');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      console.error("Failed to load docs", e);
+      return [];
+    }
+  });
+
   const [promptTemplate, setPromptTemplate] = useState<PromptTemplate>(DEFAULT_TEMPLATE);
+
+  // Save to localStorage whenever documents change
+  useEffect(() => {
+    localStorage.setItem('adgenius_kb_docs', JSON.stringify(documents));
+  }, [documents]);
 
   const renderView = () => {
     switch (currentView) {

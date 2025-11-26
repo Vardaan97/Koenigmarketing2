@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
-import { Upload, Play, Download, AlertCircle, FileSpreadsheet, Check, Database } from 'lucide-react';
-import { AdGroupRow, PromptTemplate, UploadedDocument } from '../types';
+import React, { useState, useEffect } from 'react';
+import { Upload, Play, Download, AlertCircle, FileSpreadsheet, Check, Database, CloudLightning, ArrowRight, Loader2 } from 'lucide-react';
+import { AdGroupRow, PromptTemplate, UploadedDocument, GoogleAdsCampaign, GoogleAdsAdGroup } from '../types';
 import { generateAdCopy } from '../services/geminiService';
+import { googleAdsService } from '../services/googleAdsService';
 
 interface AdGeneratorProps {
   documents: UploadedDocument[];
@@ -9,11 +10,32 @@ interface AdGeneratorProps {
 }
 
 const AdGenerator: React.FC<AdGeneratorProps> = ({ documents, promptTemplate }) => {
-  const [rows, setRows] = useState<AdGroupRow[]>([]);
+  // Load initial state from local storage if available
+  const [rows, setRows] = useState<AdGroupRow[]>(() => {
+    try {
+        const saved = localStorage.getItem('adgenius_ad_rows');
+        return saved ? JSON.parse(saved) : [];
+    } catch(e) { return []; }
+  });
+
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
 
-  // Mock parsing CSV
+  // Import Mode State
+  const [importMode, setImportMode] = useState<'CSV' | 'GADS'>('CSV');
+  const [isConnected, setIsConnected] = useState(googleAdsService.isConnected());
+  const [loadingGAds, setLoadingGAds] = useState(false);
+  const [campaigns, setCampaigns] = useState<GoogleAdsCampaign[]>([]);
+  const [selectedCampaign, setSelectedCampaign] = useState<string>('');
+  const [adGroups, setAdGroups] = useState<GoogleAdsAdGroup[]>([]);
+  const [selectedAdGroups, setSelectedAdGroups] = useState<Set<string>>(new Set());
+
+  // Save to Local Storage on change
+  useEffect(() => {
+    localStorage.setItem('adgenius_ad_rows', JSON.stringify(rows));
+  }, [rows]);
+
+  // CSV Handler
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -24,7 +46,6 @@ const AdGenerator: React.FC<AdGeneratorProps> = ({ documents, promptTemplate }) 
       const lines = text.split('\n');
       const parsedRows: AdGroupRow[] = [];
       
-      // Skip header, process 100 for demo
       lines.slice(1, 100).forEach((line) => {
         const cols = line.split(',');
         if (cols.length >= 2) {
@@ -38,16 +59,74 @@ const AdGenerator: React.FC<AdGeneratorProps> = ({ documents, promptTemplate }) 
             });
         }
       });
-      setRows(parsedRows);
+      setRows(prev => [...prev, ...parsedRows]);
     };
     reader.readAsText(file);
+  };
+
+  // Google Ads Handlers
+  const handleGAdsConnect = async () => {
+      setLoadingGAds(true);
+      await googleAdsService.connect("123-456-7890");
+      setIsConnected(true);
+      const cmps = await googleAdsService.fetchCampaigns();
+      setCampaigns(cmps);
+      setLoadingGAds(false);
+  };
+
+  const handleCampaignSelect = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+      const cId = e.target.value;
+      setSelectedCampaign(cId);
+      if (cId) {
+          setLoadingGAds(true);
+          const ags = await googleAdsService.fetchAdGroups(cId);
+          setAdGroups(ags);
+          setLoadingGAds(false);
+      } else {
+          setAdGroups([]);
+      }
+  };
+
+  const toggleAdGroup = (agId: string) => {
+      const newSet = new Set(selectedAdGroups);
+      if (newSet.has(agId)) newSet.delete(agId);
+      else newSet.add(agId);
+      setSelectedAdGroups(newSet);
+  };
+
+  const importFromGAds = async () => {
+      setLoadingGAds(true);
+      const newRows: AdGroupRow[] = [];
+      const campaignName = campaigns.find(c => c.id === selectedCampaign)?.name || 'Imported Campaign';
+
+      for (const agId of selectedAdGroups) {
+          const ag = adGroups.find(g => g.id === agId);
+          if (!ag) continue;
+          
+          // Fetch keywords via API
+          const kws = await googleAdsService.fetchKeywords(agId);
+          const kwString = kws.map(k => k.text).join(', ');
+
+          newRows.push({
+              id: Math.random().toString(36).substr(2, 9),
+              campaign: campaignName,
+              adGroup: ag.name,
+              keywords: kwString,
+              landingPage: "https://koenig-solutions.com/course", 
+              status: 'PENDING'
+          });
+      }
+
+      setRows(prev => [...prev, ...newRows]);
+      setLoadingGAds(false);
+      setImportMode('CSV');
+      setSelectedAdGroups(new Set());
   };
 
   const startGeneration = async () => {
     setIsProcessing(true);
     setProgress(0);
     
-    // Process in small batches
     let processedCount = 0;
     const newRows = [...rows];
 
@@ -58,7 +137,6 @@ const AdGenerator: React.FC<AdGeneratorProps> = ({ documents, promptTemplate }) 
         setRows([...newRows]);
 
         try {
-            // Pass the full document objects, not just text
             const result = await generateAdCopy(
                 documents, 
                 {
@@ -89,40 +167,134 @@ const AdGenerator: React.FC<AdGeneratorProps> = ({ documents, promptTemplate }) 
     setIsProcessing(false);
   };
 
+  const clearWorkspace = () => {
+    if (confirm("Clear workspace?")) {
+        setRows([]);
+        localStorage.removeItem('adgenius_ad_rows');
+    }
+  };
+
   return (
     <div className="space-y-6 h-full flex flex-col">
       <div className="flex justify-between items-start flex-shrink-0">
         <div>
             <h1 className="text-2xl font-bold text-slate-900">Bulk Ad Generator</h1>
-            <p className="text-slate-500 mt-1">Generates RSA & PMax copy using your Knowledge Base context + CSV structure.</p>
+            <p className="text-slate-500 mt-1">Generates RSA & PMax copy. Workspace is autosaved.</p>
         </div>
-        <div className="flex gap-3">
-             <button className="flex items-center gap-2 px-4 py-2 text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50">
-                <Download size={18} />
-                <span>Template</span>
-            </button>
-            <label className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer shadow-sm shadow-blue-200">
-                <Upload size={18} />
-                <span>Upload CSV</span>
-                <input type="file" className="hidden" accept=".csv" onChange={handleFileUpload} />
-            </label>
+        
+        {/* Source Toggle */}
+        <div className="flex bg-white p-1 rounded-lg border border-slate-200 shadow-sm">
+             <button 
+                onClick={() => setImportMode('CSV')}
+                className={`px-3 py-1.5 text-sm font-medium rounded-md flex items-center gap-2 transition-colors ${importMode === 'CSV' ? 'bg-slate-100 text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
+             >
+                 <FileSpreadsheet size={16} /> CSV Upload
+             </button>
+             <button 
+                onClick={() => { setImportMode('GADS'); if(!isConnected) handleGAdsConnect(); }}
+                className={`px-3 py-1.5 text-sm font-medium rounded-md flex items-center gap-2 transition-colors ${importMode === 'GADS' ? 'bg-blue-50 text-blue-700' : 'text-slate-500 hover:text-slate-700'}`}
+             >
+                 <CloudLightning size={16} /> Google Ads
+             </button>
         </div>
       </div>
+
+      {/* IMPORT PANELS */}
+      
+      {/* 1. CSV MODE */}
+      {importMode === 'CSV' && (
+          <div className="bg-slate-50 border border-slate-200 border-dashed rounded-xl p-6 flex flex-col items-center justify-center text-slate-500 hover:bg-slate-100 transition-colors">
+               <input type="file" className="hidden" id="csv-upload" accept=".csv" onChange={handleFileUpload} />
+               <label htmlFor="csv-upload" className="cursor-pointer flex flex-col items-center gap-2">
+                   <Upload size={32} className="text-slate-400" />
+                   <span className="font-medium text-slate-700">Drop your Campaign CSV here</span>
+               </label>
+          </div>
+      )}
+
+      {/* 2. GOOGLE ADS MODE */}
+      {importMode === 'GADS' && (
+          <div className="bg-white border border-blue-100 rounded-xl p-6 shadow-sm ring-4 ring-blue-50/50 space-y-4">
+              <div className="flex items-center gap-2 mb-2">
+                   <div className="bg-blue-100 p-2 rounded-lg text-blue-600"><CloudLightning size={20} /></div>
+                   <h3 className="font-bold text-slate-900">Import from Google Ads</h3>
+              </div>
+
+              {loadingGAds ? (
+                  <div className="flex items-center gap-2 text-slate-500 py-4">
+                      <Loader2 className="animate-spin" size={20} />
+                      Fetching account data...
+                  </div>
+              ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      {/* Campaign Select */}
+                      <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Select Campaign</label>
+                          <select 
+                             className="w-full p-2 border border-slate-300 rounded-lg text-sm bg-white"
+                             value={selectedCampaign}
+                             onChange={handleCampaignSelect}
+                          >
+                              <option value="">-- Choose Campaign --</option>
+                              {campaigns.map(c => (
+                                  <option key={c.id} value={c.id}>{c.name}</option>
+                              ))}
+                          </select>
+                      </div>
+
+                      {/* Ad Group Select */}
+                      <div className="md:col-span-2">
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Select Ad Groups</label>
+                          {adGroups.length > 0 ? (
+                              <div className="border border-slate-200 rounded-lg max-h-32 overflow-y-auto p-2 bg-slate-50 grid grid-cols-2 gap-2">
+                                  {adGroups.map(ag => (
+                                      <div 
+                                        key={ag.id} 
+                                        onClick={() => toggleAdGroup(ag.id)}
+                                        className={`flex items-center gap-2 p-2 rounded cursor-pointer text-sm border ${selectedAdGroups.has(ag.id) ? 'bg-blue-100 border-blue-200 text-blue-800' : 'bg-white border-slate-200 hover:border-blue-300'}`}
+                                      >
+                                          <div className={`w-4 h-4 rounded border flex items-center justify-center ${selectedAdGroups.has(ag.id) ? 'bg-blue-600 border-blue-600' : 'border-slate-300'}`}>
+                                              {selectedAdGroups.has(ag.id) && <Check size={12} className="text-white" />}
+                                          </div>
+                                          <span className="truncate">{ag.name}</span>
+                                      </div>
+                                  ))}
+                              </div>
+                          ) : (
+                              <div className="text-sm text-slate-400 italic p-2 border border-slate-200 rounded-lg bg-slate-50">
+                                  Select a campaign to view ad groups...
+                              </div>
+                          )}
+                      </div>
+                  </div>
+              )}
+
+              <div className="flex justify-end pt-2">
+                  <button 
+                    onClick={importFromGAds}
+                    disabled={selectedAdGroups.size === 0 || loadingGAds}
+                    className="bg-blue-600 text-white px-4 py-2 rounded-lg font-medium disabled:opacity-50 hover:bg-blue-700 flex items-center gap-2"
+                  >
+                      Import {selectedAdGroups.size} Ad Groups <ArrowRight size={16} />
+                  </button>
+              </div>
+          </div>
+      )}
+
 
       {/* Context Indicator */}
       {documents.length > 0 && (
           <div className="flex items-center gap-2 text-sm text-slate-500 bg-slate-50 p-2 rounded-lg border border-slate-200 flex-shrink-0">
               <Database size={14} className="text-blue-500" />
-              <span>Active Context: {documents.length} knowledge assets available (Course Info, Reports, etc.)</span>
+              <span>Active Context: {documents.length} knowledge assets available</span>
           </div>
       )}
 
-      {/* Main Workspace */}
+      {/* Main Workspace Table */}
       <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden flex flex-col flex-1 min-h-0">
-        {/* Toolbar */}
         <div className="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50 flex-shrink-0">
             <div className="flex items-center gap-4">
-                <span className="font-semibold text-slate-700">Rows: {rows.length}</span>
+                <span className="font-semibold text-slate-700">Workspace Rows: {rows.length}</span>
                 {isProcessing && (
                     <div className="flex items-center gap-2">
                         <div className="w-32 h-2 bg-slate-200 rounded-full overflow-hidden">
@@ -132,27 +304,31 @@ const AdGenerator: React.FC<AdGeneratorProps> = ({ documents, promptTemplate }) 
                     </div>
                 )}
             </div>
-            <button 
-                onClick={startGeneration}
-                disabled={rows.length === 0 || isProcessing}
-                className={`
-                    flex items-center gap-2 px-6 py-2 rounded-lg font-medium transition-colors
-                    ${rows.length === 0 || isProcessing 
-                        ? 'bg-slate-200 text-slate-400 cursor-not-allowed' 
-                        : 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-lg shadow-emerald-200'}
-                `}
-            >
-                {isProcessing ? 'Generating...' : 'Run Generation'}
-                {!isProcessing && <Play size={18} />}
-            </button>
+            <div className="flex gap-2">
+                {rows.length > 0 && (
+                    <button onClick={clearWorkspace} className="px-4 py-2 text-slate-500 hover:text-red-600 font-medium">Clear</button>
+                )}
+                <button 
+                    onClick={startGeneration}
+                    disabled={rows.length === 0 || isProcessing}
+                    className={`
+                        flex items-center gap-2 px-6 py-2 rounded-lg font-medium transition-colors
+                        ${rows.length === 0 || isProcessing 
+                            ? 'bg-slate-200 text-slate-400 cursor-not-allowed' 
+                            : 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-lg shadow-emerald-200'}
+                    `}
+                >
+                    {isProcessing ? 'Generating...' : 'Generate Ads'}
+                    {!isProcessing && <Play size={18} />}
+                </button>
+            </div>
         </div>
 
-        {/* Table */}
         <div className="flex-1 overflow-auto">
             {rows.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center text-slate-400">
                     <FileSpreadsheet size={48} className="mb-4 opacity-50" />
-                    <p>No data loaded. Upload a CSV with headers: Campaign, AdGroup, Keywords, URL</p>
+                    <p>Import data from CSV or Google Ads to begin.</p>
                 </div>
             ) : (
                 <table className="w-full text-left text-sm">

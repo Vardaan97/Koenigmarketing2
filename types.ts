@@ -21,6 +21,9 @@ export interface UploadedDocument {
   description: string; 
   category: DocCategory; 
   suggestedLinks?: string[]; 
+  hash?: string;
+  vectorX?: number;
+  vectorY?: number;
 }
 
 export interface AdGroupRow {
@@ -65,7 +68,32 @@ export interface KeywordMetric {
   source: 'Google Ads' | 'Semrush' | 'Perplexity';
 }
 
-// --- NEW TYPES FOR AUDIT & EXPERIMENTS ---
+// --- GOOGLE ADS TYPES ---
+
+export interface GoogleAdsCampaign {
+  id: string;
+  name: string;
+  status: 'ENABLED' | 'PAUSED' | 'REMOVED';
+  budget: number;
+}
+
+export interface GoogleAdsAdGroup {
+  id: string;
+  name: string;
+  campaignId: string;
+  status: 'ENABLED' | 'PAUSED';
+  type: 'SEARCH' | 'DISPLAY' | 'PERFORMANCE_MAX';
+}
+
+export interface GoogleAdsKeyword {
+  id: string;
+  text: string;
+  matchType: 'BROAD' | 'PHRASE' | 'EXACT';
+  qualityScore: number; // 1-10
+  cpc: number;
+  impressions: number;
+  ctr: number;
+}
 
 export interface AuditIssue {
   id: string;
