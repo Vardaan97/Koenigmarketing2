@@ -83,7 +83,7 @@ const App: React.FC = () => {
 
   const renderView = () => {
     switch (currentView) {
-      case AppView.DASHBOARD: return <Dashboard />;
+      case AppView.DASHBOARD: return <Dashboard onNavigate={setCurrentView} />;
       case AppView.KNOWLEDGE_BASE: return <KnowledgeBase documents={documents} setDocuments={setDocuments} />;
       case AppView.AD_GENERATOR: return <AdGenerator documents={documents} promptTemplate={promptTemplate} />;
       case AppView.PROMPT_STUDIO: return <PromptStudio template={promptTemplate} setTemplate={setPromptTemplate} />;

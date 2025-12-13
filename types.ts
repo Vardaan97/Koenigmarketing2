@@ -63,13 +63,6 @@ export interface PromptTemplate {
   isDefault: boolean;
 }
 
-export interface DashboardStats {
-  totalAdsGenerated: number;
-  avgAdScore: number;
-  documentsIndexed: number;
-  creditsUsed: number;
-}
-
 export interface KeywordMetric {
   keyword: string;
   volume: number;
@@ -150,7 +143,121 @@ export interface Experiment {
   name: string;
   startDate: string;
   status: 'RUNNING' | 'COMPLETED' | 'DRAFT';
-  variants: [ExperimentVariant, ExperimentVariant]; 
-  aiAnalysis?: string; 
+  variants: [ExperimentVariant, ExperimentVariant];
+  aiAnalysis?: string;
   winner?: 'A' | 'B' | 'INCONCLUSIVE';
+}
+
+// --- ENHANCED DASHBOARD TYPES ---
+
+export interface DashboardStats {
+  totalAdsGenerated: number;
+  avgAdScore: number;
+  documentsIndexed: number;
+  creditsUsed: number;
+  completedAds: number;
+  pendingAds: number;
+  failedAds: number;
+  topCampaign?: string;
+}
+
+export interface TechNewsItem {
+  id: string;
+  title: string;
+  url: string;
+  source: 'HackerNews' | 'DevTo' | 'GitHub';
+  score?: number;
+  author?: string;
+  timestamp: string;
+  tags?: string[];
+  commentsCount?: number;
+}
+
+export interface CertificationTrend {
+  name: string;
+  provider: string;
+  demandScore: number; // 0-100
+  salaryImpact: string;
+  growthRate: number; // percentage
+  jobCount: number;
+  icon: string;
+}
+
+export interface JobMarketPulse {
+  totalJobs: number;
+  avgSalary: number;
+  topSkills: { skill: string; count: number }[];
+  topLocations: { location: string; count: number }[];
+  remotePercentage: number;
+  growthVsLastMonth: number;
+}
+
+export interface ActivityItem {
+  id: string;
+  type: 'ad_generated' | 'document_uploaded' | 'audit_completed' | 'experiment_started' | 'keyword_researched';
+  title: string;
+  description: string;
+  timestamp: string;
+  metadata?: Record<string, any>;
+}
+
+export interface TopPerformingAd {
+  id: string;
+  campaign: string;
+  adGroup: string;
+  headline: string;
+  score: number;
+  estimatedCtr?: number;
+}
+
+export interface ITEvent {
+  id: string;
+  title: string;
+  date: string;
+  type: 'webinar' | 'conference' | 'certification_deadline' | 'course_launch';
+  provider?: string;
+  url?: string;
+  isVirtual: boolean;
+}
+
+export interface MarketInsight {
+  id: string;
+  category: 'opportunity' | 'warning' | 'trend' | 'tip';
+  title: string;
+  description: string;
+  actionable: string;
+  priority: 'high' | 'medium' | 'low';
+  generatedAt: string;
+}
+
+export interface CoursePerformance {
+  courseName: string;
+  adsGenerated: number;
+  avgScore: number;
+  clicks?: number;
+  conversions?: number;
+  trend: 'up' | 'down' | 'stable';
+}
+
+export interface CompetitorIntel {
+  name: string;
+  estimatedAdSpend: string;
+  topKeywords: string[];
+  strengthScore: number;
+  weaknesses: string[];
+}
+
+export interface WeatherWidget {
+  location: string;
+  temp: number;
+  condition: string;
+  icon: string;
+}
+
+export interface QuickAction {
+  id: string;
+  label: string;
+  icon: string;
+  view: AppView;
+  description: string;
 }
